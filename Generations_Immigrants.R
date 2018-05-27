@@ -43,12 +43,14 @@ z=update(z, i_stat = ifelse(prcitshp <= 3, 1,ifelse(prcitshp == 4, 2,ifelse(prci
 z=update(z, i_stat_f = factor( i_stat ))
 # Define Immigrant Mother / Father 
 z=update(z, i_parent = ifelse( (pefntvty < 100 | pemntvty < 100), 0, 1))
+z=update(z, i_parent_f = factor( i_parent ))
 
 z=update(z, i2_stat = ifelse( prcitshp <= 4, 0,ifelse(prcitshp == 1, 1, 0)))
 z=update(z, uninsure = ifelse( ahiper == 0, 0, ifelse(ahiper >= 1, 1, 0)))
 z=update(z, ssi = ifelse( ssi_yn == 1, 1, ifelse(ssi_yn == 2, 0, 0)))
+# Recieve TANF
 z=update(z, pub_help = ifelse( paw_yn == 1, 1, ifelse(paw_yn == 2, 0, 0)))
-z=update(z, lunch_stat = ifelse( hflunch == 1, 1, ifelse(hflunch == 2, 0, 0)))
+# Average SNAP Benefit per person
 z=update(z, avgsnapben = hfdval/h_numper)
 
 #### Populations ####
@@ -67,8 +69,10 @@ noncit=subset(z,i_stat== 3)
 naturali=subset(z,i_stat== 2)
 
 # Food Stamps
+check=function(x){	k=subset(z, i_stat == 1) 
+svyby( ~i_parent_f, by = ~ a_age, design =  k, FUN = svymean )}
+check(z)
 
-svyby( ~one, by = ~ pefntvty, design =  noncit, FUN = svytotal )
 svyby( ~one, by = ~ pefntvty, design =  naturali, FUN = svytotal )
 PEFNTVTY
 
@@ -96,11 +100,18 @@ adults_ssi=update(adults_ssi, avg_welfare = (hssival/h_numper))
 svyby( ~avg_ssi, by = ~ i_stat, design =  adults_ssi, FUN = svymean)
 svyby( ~avg_welfare, by = ~ i_stat, design =  adults_welfare, FUN = svymean)
 
+pa_y=function(x){	k=update(x, pub_help = factor( pub_help ))
+svyby( ~pub_help, by = ~ i_stat, design =  k, 	FUN = svymean)}
+
 #### TANF/Public Assistance ####
 
 #### SNAP ####
 h_foodspval=function(x){	svyby( ~hfdval, by = ~ i_stat, design =  x, 	FUN = svytotal)}
 h_foodspval()
+
+h_foodspval=function(x){	svyby( ~hfdval, by = ~ i_stat, design =  x, 	FUN = svytotal)}
+h_foodspval()
+
 
 # Household
 h_foodstamp=function(x){		k=update(x, hfoodsp = factor( hfoodsp )) 
@@ -120,8 +131,6 @@ ssi_y=function(x){	k=update(x, ssi = factor( ssi ))
 svyby( ~ssi, by = ~ i_stat, design =  k, 	FUN = svymean)}
 # Person
 
-pa_y=function(x){	k=update(x, pub_help = factor( pub_help ))
-svyby( ~pub_help, by = ~ i_stat, design =  k, 	FUN = svymean)}
 # Person
 ssi_y(pov200_a)
 pa_y(pov200_a)
