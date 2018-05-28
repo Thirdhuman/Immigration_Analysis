@@ -36,55 +36,72 @@ z <-svrepdesign(weights = ~marsupwt,
 options( survey.replicates.mse = TRUE )
 z$mse=TRUE
 
-# Define Immigrants (Inclusve vs. Exclusive)
-z=update(z, i_stat =  ifelse(prcitshp >= 4, 1,ifelse(prcitshp >= 1, 2, 0)))
-z=update(z, i_stat = ifelse(prcitshp <= 3, 1,ifelse(prcitshp == 4, 2,ifelse(prcitshp == 5, 3, 1))))
-# Define Factor
-z=update(z, i_stat_f = factor( i_stat ))
+# Define Immigrants (Inclusve vs. Exclusive) 
+z=update(z, i_stat =  ifelse(prcitshp >= 4, 1,ifelse(prcitshp >= 1, 2, 0))) # Generation-based Stat
+z=update(z, i_stat_old = ifelse(prcitshp <= 3, 1,ifelse(prcitshp == 4, 2,ifelse(prcitshp == 5, 3, 1)))) # Old Stat
+z=update(z, i_stat_f = factor( i_stat )) # Define Factor
 # Define Immigrant Mother / Father 
-z=update(z, i_parent = ifelse( (pefntvty < 100 | pemntvty < 100), 0, 1))
+z=update(z, i_parent = ifelse( (pefntvty < 100 | pemntvty < 100), 0, 1)) # Parent Immigrant?
 z=update(z, i_parent_f = factor( i_parent ))
 
 z=update(z, i2_stat = ifelse( prcitshp <= 4, 0,ifelse(prcitshp == 1, 1, 0)))
+# Uninsured vs. Insured
 z=update(z, uninsure = ifelse( ahiper == 0, 0, ifelse(ahiper >= 1, 1, 0)))
+# Supplemental Security Income
 z=update(z, ssi = ifelse( ssi_yn == 1, 1, ifelse(ssi_yn == 2, 0, 0)))
 # Recieve TANF
 z=update(z, pub_help = ifelse( paw_yn == 1, 1, ifelse(paw_yn == 2, 0, 0)))
 # Average SNAP Benefit per person
 z=update(z, avgsnapben = hfdval/h_numper)
+# Diverse Government Care Stat
+z=update(z,govcare=ifelse((kids1$ch_mc == 1& kids1$a_age < 15)|( kids1$pchip == 1)|(kids1$caid ==1&kids1$a_age >=15)|(kids1$mcaid ==1&kids1$a_age>=15),1,0))
 
 #### Populations ####
+# Poverty
 pov200=subset(z, povll < 8)
-pov200_a=subset(z, povll < 8 & a_age > 18 )
-pov200_c=subset(z, povll < 8 & a_age <= 17 )
+pov200_a=subset(z, povll < 8&a_age > 18 )
+pov200_c=subset(z, povll < 8&a_age <= 17 )
+# Non Poverty
 adults=subset(z, a_age > 18 )
 children=subset(z, a_age <= 18 )
 adults_Im=subset(z, a_age > 17 & i_stat == 3)
-
+# Population Counts
 svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svytotal)
 svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svyquantile())
 svyby( ~ptotval, by = ~ i_stat, design =  adults, FUN = svyquantile,  c( .5), ci=TRUE )
-
-noncit=subset(z,i_stat== 3)
-naturali=subset(z,i_stat== 2)
-
-# Food Stamps
-check=function(x){	k=subset(z, i_stat == 1) 
+check=function(x){	k=subset(z, i_stat == 1)  # Check immigrant parent distribution
 svyby( ~i_parent_f, by = ~ a_age, design =  k, FUN = svymean )}
 check(z)
 
-svyby( ~one, by = ~ pefntvty, design =  naturali, FUN = svytotal )
-PEFNTVTY
+###### WELFARE PROGRAM CODES ######
 
-svyquantile( ~ptotval, design =  z, c(.5))
+#### Personal-Child ####
+# supplemental security income, child received - ssikidyn
+# child covered by medicare/medicaid - ch_mc
+# child covered by state’s chip - pchip
+
+#### Personal ####
+# Social Security Recieve: ss_yn 
+# Social Security Value: ss_val
+# Medicare, covered by - care
+# Medicaid, covered by - caid
+# WIC benefits received - wicyn
+# supplemental security income received (SSI) - ssi_yn
+# public assistance - person - paw_yn 
+# educational assistance - ed_yn
+
+#### Household ####
+# food stamps recipients - hfoodsp
+# supplemental security benefits - hssi_yn
+# public housing project - hpublic
+# educational assistance benefits - hed_yn
+# energy assistance benefits - hengast 
+# children receiving free or reduced price lunches - hflunch
 
 #### Figure 1 - Health Insurance - Medicaid/Uninsured  ####
 
 medicaid=function(x){	k=update(x, caid = factor( caid )) 
 svyby( ~caid, by = ~ i_stat, design =  k, 	FUN = svymean)}
-
-kids2=update(z, govcare = ifelse(( kids1$ch_mc == 1	 & kids1$a_age < 15)	| ( kids1$pchip == 1) |
-							 	(kids1$caid ==1 & kids1$a_age >= 15) | (kids1$mcaid ==1 & kids1$a_age >= 15), 1,0))
 
 medicaid(pov200_a)
 medicaid(pov200)
