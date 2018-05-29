@@ -1,5 +1,4 @@
 # Generational Immmigration Dynamics
-
 library(survey)				# load survey package (analyzes complex design surveys)
 library(reshape2)
 library(plyr)
@@ -24,8 +23,8 @@ before_nrow <- nrow( x )
 x <- merge( x , kids , all.x = TRUE )
 x[ is.na( x$either_parent_immigrant ) , 'either_parent_immigrant' ] <- 0
 stopifnot( nrow( x ) == before_nrow )
-
 table( x$either_parent_immigrant )
+
 
 z <-svrepdesign(weights = ~marsupwt, 
 			repweights = "pwwgt[1-9]", 
@@ -35,16 +34,17 @@ z <-svrepdesign(weights = ~marsupwt,
 			combined.weights = T)
 options( survey.replicates.mse = TRUE )
 z$mse=TRUE
+rm(kids,immigrant_dads,immigrant_moms,before_nrow,x)
+
 
 # Define Immigrants (Inclusve vs. Exclusive) 
-z=update(z, i_stat =  ifelse(prcitshp >= 4, 1,ifelse(prcitshp >= 1, 2, 0))) # Generation-based Stat
-z=update(z, i_stat_old = ifelse(prcitshp <= 3, 1,ifelse(prcitshp == 4, 2,ifelse(prcitshp == 5, 3, 1)))) # Old Stat
-z=update(z, i_stat_f = factor( i_stat )) # Define Factor
-# Define Immigrant Mother / Father 
+z=update(z, i_stat =  ifelse(prcitshp >= 4, 1,ifelse(prcitshp >= 1, 2, 0))) # Is Immigrant?
+z=update(z, cit_stat = ifelse(prcitshp <= 4, 0,ifelse(prcitshp == 1, 1, 0))) # Is Citizen?
+z=update(z, i_cit_stat = ifelse(prcitshp <= 3, 1,ifelse(prcitshp == 4, 2,ifelse(prcitshp == 5, 3, 0)))) # Is Immigrant and Citizen?
 z=update(z, i_parent = ifelse( (pefntvty < 100 | pemntvty < 100), 0, 1)) # Parent Immigrant?
-z=update(z, i_parent_f = factor( i_parent ))
-
-z=update(z, i2_stat = ifelse( prcitshp <= 4, 0,ifelse(prcitshp == 1, 1, 0)))
+z=update(z, i_gen_stat = ifelse(prcitshp >= 4, 1,ifelse(i_parent== 1, 2,ifelse(i_parent == 0, 3, 0)))) # Generational Stat
+z=update(z, i_parent_f = factor( i_parent )) # Define Factor
+z=update(z, i_stat_f = factor( i_stat )) # Define Factor
 # Uninsured vs. Insured
 z=update(z, uninsure = ifelse( ahiper == 0, 0, ifelse(ahiper >= 1, 1, 0)))
 # Supplemental Security Income
@@ -54,17 +54,24 @@ z=update(z, pub_help = ifelse( paw_yn == 1, 1, ifelse(paw_yn == 2, 0, 0)))
 # Average SNAP Benefit per person
 z=update(z, avgsnapben = hfdval/h_numper)
 # Diverse Government Care Stat
-z=update(z,govcare=ifelse((kids1$ch_mc == 1& kids1$a_age < 15)|( kids1$pchip == 1)|(kids1$caid ==1&kids1$a_age >=15)|(kids1$mcaid ==1&kids1$a_age>=15),1,0))
+# Social Security Count
+z=update(z, ss_count = ifelse( ss_yn == 1, 1, ifelse(ss_yn == 0, 0, 0)))
+
 
 #### Populations ####
 # Poverty
 pov200=subset(z, povll < 8)
 pov200_a=subset(z, povll < 8&a_age > 18 )
 pov200_c=subset(z, povll < 8&a_age <= 17 )
+pov200_e=subset(z, povll < 8&a_age >= 65)
+
 # Non Poverty
 adults=subset(z, a_age > 18 )
-children=subset(z, a_age <= 18 )
+kids=subset(z, a_age <= 18 )
+elderly=subset(z, a_age >= 65)
 adults_Im=subset(z, a_age > 17 & i_stat == 3)
+z=update(z,govcare=ifelse((kids$ch_mc==1&kids$a_age < 15)|( kids$pchip==1)|(kids$caid==1&kids$a_age >=15)|(kids$mcaid ==1&kids$a_age>=15),1,0))
+
 # Population Counts
 svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svytotal)
 svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svyquantile())
@@ -98,19 +105,90 @@ check(z)
 # energy assistance benefits - hengast 
 # children receiving free or reduced price lunches - hflunch
 
-#### Figure 1 - Health Insurance - Medicaid/Uninsured  ####
+#### Social Security Function  ####
+SS=function(x){	k=(x) 
+#Generations
+adult_population=svyby( ~one, by = ~ i_gen_stat, design =adults, FUN=svytotal)
+colnames(adult_population)[colnames(adult_population)=="one"]="adult_population"
+colnames(adult_population)[colnames(adult_population)=="se"]="se_adult_population"
+eligible_population=svyby( ~one, by = ~ i_gen_stat, design =k, FUN=svytotal)
+colnames(eligible_population)[colnames(eligible_population)=="se"]="se_eligible_population"
+colnames(eligible_population)[colnames(eligible_population)=="one"]="eligible_population"
+
+count=svyby( ~ss_count, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ss_val, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+generation	=	merge(count, value, by='i_gen_stat')
+generation	=	merge(generation, eligible_population, by='i_gen_stat')
+generation	=	merge(generation, adult_population, by='i_gen_stat')
+
+generation$i_gen_stat=ifelse(generation$i_gen_stat==1,"Gen_1",ifelse(generation$i_gen_stat==2,"Gen_2",ifelse(generation$i_gen_stat==3,"Gen_3+", "error")))
+colnames(generation)[colnames(generation)=="i_gen_stat"]="group"
+generation$calc_type=1
+
+#Immigrant
+adult_population=svyby( ~one, by = ~ i_stat, design =adults, FUN=svytotal)
+colnames(adult_population)[colnames(adult_population)=="one"]="adult_population"
+colnames(adult_population)[colnames(adult_population)=="se"]="se_adult_population"
+eligible_population=svyby( ~one, by = ~ i_stat, design =k, FUN=svytotal)
+colnames(eligible_population)[colnames(eligible_population)=="se"]="se_eligible_population"
+colnames(eligible_population)[colnames(eligible_population)=="one"]="eligible_population"
+count=svyby( ~ss_count, by = ~ i_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ss_val, by = ~ i_stat, design =  k, 	FUN = svytotal)
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+immigrant	=	merge(count, value, by='i_stat')
+immigrant	=	merge(immigrant, eligible_population, by='i_stat')
+immigrant	=	merge(immigrant, adult_population, by='i_stat')
+
+immigrant$i_stat=ifelse(immigrant$i_stat == 1,"Immigrant",ifelse(immigrant$i_stat == 2, "Non-immigrant", "error"))
+colnames(immigrant)[colnames(immigrant)=="i_stat"]="group"
+immigrant$calc_type=2
+#Citizenship or Immigrant
+adult_population=svyby( ~one, by = ~ i_cit_stat, design =adults, FUN=svytotal)
+colnames(adult_population)[colnames(adult_population)=="se"]="se_adult_population"
+colnames(adult_population)[colnames(adult_population)=="one"]="adult_population"
+eligible_population=svyby( ~one, by = ~ i_cit_stat, design =k, FUN=svytotal)
+count=svyby( ~ss_count, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ss_val, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
+colnames(eligible_population)[colnames(eligible_population)=="se"]="se_eligible_population"
+colnames(eligible_population)[colnames(eligible_population)=="one"]="eligible_population"
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+nativity	=	merge(count, value, by='i_cit_stat')
+nativity	=	merge(nativity, eligible_population, by='i_cit_stat')
+nativity	=	merge(nativity, adult_population, by='i_cit_stat')
+nativity$i_cit_stat=ifelse(nativity$i_cit_stat==1,"Natives", ifelse(nativity$i_cit_stat==2, "Naturalized", "Noncitizens"))
+colnames(nativity)[colnames(nativity)=="i_cit_stat"]="group"
+nativity$calc_type=3
+
+# Merge and calculate
+program_name	=	rbind(generation, nativity, immigrant)
+program_name <- within(program_name, per_beneficiary <- ss_val/ss_count)
+program_name <- within(program_name, per_eligible_population <- ss_val/eligible_population)
+program_name <- within(program_name, per_entire_population <- ss_val/adult_population)
+program_name$se_count=NA
+program_name$se_value=NA
+program_name$se_eligible_population=NA
+program_name$se_adult_population=NA
+return(program_name)}
+Social_Security=(SS(elderly))
+Social_Security_Pov200=(SS(pov200_e))
+
+
+#### Medicaid/Uninsured  ####
 
 medicaid=function(x){	k=update(x, caid = factor( caid )) 
 svyby( ~caid, by = ~ i_stat, design =  k, 	FUN = svymean)}
 
-medicaid(pov200_a)
+medicaid(adults)
 medicaid(pov200)
 
 #### TANF/Public Assistance ####
 
 adults_welfare <-subset(z, povll < 8 & a_age > 18 & hpaw_yn == 1)
 adults_welfare=update(adults_welfare, avg_ssi = (hpawval/h_numper))
-
 adults_ssi=subset(z, povll < 8 & a_age > 18 & hssi_yn == 1)
 adults_ssi=update(adults_ssi, avg_welfare = (hssival/h_numper))
 
@@ -273,24 +351,24 @@ svyby( ~one, by = ~ i_stat, design =  z, 	FUN = svytotal)
 #pchip - Children's health insurance program
 #ch_mc - Children Medicare/Medicaid
 
-kids1=update(kids1, govcare = ifelse((ch_mc == 1)	| (pchip == 1) |(caid ==1) | (mcaid ==1 ), 1,0))
-kids1=update(kids1, govcare = factor( govcare ))
+kids=update(kids, govcare = ifelse((ch_mc == 1)	| (pchip == 1) |(caid ==1) | (mcaid ==1 ), 1,0))
+kids=update(kids, govcare = factor( govcare ))
 
-kids1=update(kids1, uninsured = 
+kids=update(kids, uninsured = 
 			 	ifelse((hi_yn == 2 & mcaid == 2 & caid != 1 & champ == 2 & mcare != 1) |	(ch_hi == 3 & a_age < 15) & ch_mc != 1 & (pchip != 1), 1, 0))
-kids1=update(kids1, uninsured = factor( uninsured ))
+kids=update(kids, uninsured = factor( uninsured ))
 
-kids1=update(kids1, hsnapben = 
+kids=update(kids, hsnapben = 
 			 	ifelse(hfoodsp == 1,1,0 ))
-kids1=update(kids1, hsnapben = factor( hsnapben ))
+kids=update(kids, hsnapben = factor( hsnapben ))
 
-kids1=update(kids1, avgsnapben = hfdval/h_numper)
+kids=update(kids, avgsnapben = hfdval/h_numper)
 
-kids1=update(kids1, ssi_rate = ifelse(hssi_yn == 1, 1, 0))
-kids1=update(kids1, ssi_rate = factor( ssi_rate ))
+kids=update(kids, ssi_rate = ifelse(hssi_yn == 1, 1, 0))
+kids=update(kids, ssi_rate = factor( ssi_rate ))
 
-kids1=update(kids1, welfare = ifelse(hpaw_yn == 1, 1, 0))
-kids1=update(kids1, welfare = factor( welfare ))
+kids=update(kids, welfare = ifelse(hpaw_yn == 1, 1, 0))
+kids=update(kids, welfare = factor( welfare ))
 
 adults2=update(adults2, ssi_rate = ifelse(ssi_yn == 1, 1, 0))
 adults2=update(adults2, ssi_rate = factor( ssi_rate ))
@@ -298,14 +376,14 @@ adults2=update(adults2, ssi_rate = factor( ssi_rate ))
 adults2=update(adults2, welfare = ifelse(paw_yn == 1, 1, 0))
 adults2=update(adults2, welfare = factor( welfare ))
 
-kids1=update(kids1, welfare_value = hpawval/h_numper)
-kids1=update(kids1, ssi_value = hssival/h_numper)
+kids=update(kids, welfare_value = hpawval/h_numper)
+kids=update(kids, ssi_value = hssival/h_numper)
 
 #### Subsets
 
-kids_good=subset(kids1, prcitshp != 5 & either_parent_noncitizen == 0)
-anchor_babies=subset(kids1, prcitshp != 5 & either_parent_noncitizen == 1)
-kids_badhombres=subset(kids1, prcitshp == 5)
+kids_good=subset(kids, prcitshp != 5 & either_parent_noncitizen == 0)
+anchor_babies=subset(kids, prcitshp != 5 & either_parent_noncitizen == 1)
+kids_badhombres=subset(kids, prcitshp == 5)
 
 ### Final Calcs
 
