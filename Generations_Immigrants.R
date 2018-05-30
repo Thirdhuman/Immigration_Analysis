@@ -3,7 +3,6 @@ library(survey)				# load survey package (analyzes complex design surveys)
 library(reshape2)
 library(plyr)
 #pop_68 = peinusyr >= 4
-
 x=readRDS( file.path( path.expand( "~" ),"CPSASEC",paste(2017,"cps asec.rds") ) )
 immigrant_dads<- subset(x, a_sex == 1 & a_age > 18 & prcitshp >= 4 , select = c(h_seq , a_lineno))
 immigrant_moms<- subset(x, a_sex == 2 & a_age > 18 & prcitshp >= 4 , select = c(h_seq , a_lineno))
@@ -25,7 +24,6 @@ x[ is.na( x$either_parent_immigrant ) , 'either_parent_immigrant' ] <- 0
 stopifnot( nrow( x ) == before_nrow )
 table( x$either_parent_immigrant )
 
-
 z <-svrepdesign(weights = ~marsupwt, 
 			repweights = "pwwgt[1-9]", 
 			type = "Fay", 
@@ -35,8 +33,6 @@ z <-svrepdesign(weights = ~marsupwt,
 options( survey.replicates.mse = TRUE )
 z$mse=TRUE
 rm(kids,immigrant_dads,immigrant_moms,before_nrow,x)
-
-
 # Define Immigrants (Inclusve vs. Exclusive) 
 z=update(z, i_stat =  ifelse(prcitshp >= 4, 1,ifelse(prcitshp >= 1, 2, 0))) # Is Immigrant?
 z=update(z, cit_stat = ifelse(prcitshp <= 4, 0,ifelse(prcitshp == 1, 1, 0))) # Is Citizen?
@@ -45,6 +41,8 @@ z=update(z, i_parent = ifelse( (pefntvty < 100 | pemntvty < 100), 0, 1)) # Paren
 z=update(z, i_gen_stat = ifelse(prcitshp >= 4, 1,ifelse(i_parent== 1, 2,ifelse(i_parent == 0, 3, 0)))) # Generational Stat
 z=update(z, i_parent_f = factor( i_parent )) # Define Factor
 z=update(z, i_stat_f = factor( i_stat )) # Define Factor
+z=update(z,i_gen_kids= ifelse(prcitshp!=5&either_parent_immigrant==0,1,ifelse(prcitshp!=5&either_parent_immigrant==1,2,ifelse(prcitshp==5,3,0))))
+
 # Uninsured vs. Insured
 z=update(z, uninsure = ifelse( ahiper == 0, 0, ifelse(ahiper >= 1, 1, 0)))
 # Supplemental Security Income
@@ -53,32 +51,29 @@ z=update(z, ssi = ifelse( ssi_yn == 1, 1, ifelse(ssi_yn == 2, 0, 0)))
 z=update(z, pub_help = ifelse( paw_yn == 1, 1, ifelse(paw_yn == 2, 0, 0)))
 # Average SNAP Benefit per person
 z=update(z, avgsnapben = hfdval/h_numper)
-# Diverse Government Care Stat
+# Supplemental Security Income
+z=update(z, ssi_count = ifelse( ssi_yn == 1, 1, ifelse(ssi_yn == 2, 0, 0)))
 # Social Security Count
 z=update(z, ss_count = ifelse( ss_yn == 1, 1, ifelse(ss_yn == 0, 0, 0)))
-
+# Diverse Government Care Stat
+z=update(z,govcare=ifelse((z$ch_mc==1&z$a_age < 15)|( z$pchip==1)|(z$caid==1&z$a_age >=15)|(z$mcaid ==1&z$a_age>=15),1,0))
 
 #### Populations ####
+# Non Poverty
+adults=subset(z, a_age > 18 )
+kids=subset(z, a_age <= 18 )
+elderly=subset(z, a_age >= 65)
+adults_Im=subset(z, a_age > 17 & i_stat == 3)
 # Poverty
 pov200=subset(z, povll < 8)
 pov200_a=subset(z, povll < 8&a_age > 18 )
 pov200_c=subset(z, povll < 8&a_age <= 17 )
 pov200_e=subset(z, povll < 8&a_age >= 65)
 
-# Non Poverty
-adults=subset(z, a_age > 18 )
-kids=subset(z, a_age <= 18 )
-elderly=subset(z, a_age >= 65)
-adults_Im=subset(z, a_age > 17 & i_stat == 3)
-z=update(z,govcare=ifelse((kids$ch_mc==1&kids$a_age < 15)|( kids$pchip==1)|(kids$caid==1&kids$a_age >=15)|(kids$mcaid ==1&kids$a_age>=15),1,0))
-
-# Population Counts
-svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svytotal)
-svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svyquantile())
-svyby( ~ptotval, by = ~ i_stat, design =  adults, FUN = svyquantile,  c( .5), ci=TRUE )
-check=function(x){	k=subset(z, i_stat == 1)  # Check immigrant parent distribution
-svyby( ~i_parent_f, by = ~ a_age, design =  k, FUN = svymean )}
-check(z)
+## Population Counts ##
+# svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svytotal)
+# svyby( ~ptotval, by = ~ i_stat, design =  adults, FUN = svyquantile,  c( .5), ci=TRUE )
+# svyby( ~i_parent_f, by = ~ a_age, design =  k, FUN = svymean )}
 
 ###### WELFARE PROGRAM CODES ######
 
@@ -94,6 +89,7 @@ check(z)
 # Medicaid, covered by - caid
 # WIC benefits received - wicyn
 # supplemental security income received (SSI) - ssi_yn
+# supplemental security income value (SSI) - ssi_val
 # public assistance - person - paw_yn 
 # educational assistance - ed_yn
 
@@ -108,77 +104,280 @@ check(z)
 #### Social Security Function  ####
 SS=function(x){	k=(x) 
 #Generations
-adult_population=svyby( ~one, by = ~ i_gen_stat, design =adults, FUN=svytotal)
-colnames(adult_population)[colnames(adult_population)=="one"]="adult_population"
-colnames(adult_population)[colnames(adult_population)=="se"]="se_adult_population"
-eligible_population=svyby( ~one, by = ~ i_gen_stat, design =k, FUN=svytotal)
-colnames(eligible_population)[colnames(eligible_population)=="se"]="se_eligible_population"
-colnames(eligible_population)[colnames(eligible_population)=="one"]="eligible_population"
-
+total_population=svyby( ~one, by = ~ i_gen_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+age_eligible_population=svyby( ~one, by = ~ i_gen_stat, design =k, FUN=svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
 count=svyby( ~ss_count, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
 value=svyby( ~ss_val, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
 colnames(count)[colnames(count)=="se"]="se_count"
 colnames(value)[colnames(value)=="se"]="se_value"
 generation	=	merge(count, value, by='i_gen_stat')
-generation	=	merge(generation, eligible_population, by='i_gen_stat')
-generation	=	merge(generation, adult_population, by='i_gen_stat')
-
+generation	=	merge(generation, age_eligible_population, by='i_gen_stat')
+generation	=	merge(generation, total_population, by='i_gen_stat')
 generation$i_gen_stat=ifelse(generation$i_gen_stat==1,"Gen_1",ifelse(generation$i_gen_stat==2,"Gen_2",ifelse(generation$i_gen_stat==3,"Gen_3+", "error")))
 colnames(generation)[colnames(generation)=="i_gen_stat"]="group"
 generation$calc_type=1
-
 #Immigrant
-adult_population=svyby( ~one, by = ~ i_stat, design =adults, FUN=svytotal)
-colnames(adult_population)[colnames(adult_population)=="one"]="adult_population"
-colnames(adult_population)[colnames(adult_population)=="se"]="se_adult_population"
-eligible_population=svyby( ~one, by = ~ i_stat, design =k, FUN=svytotal)
-colnames(eligible_population)[colnames(eligible_population)=="se"]="se_eligible_population"
-colnames(eligible_population)[colnames(eligible_population)=="one"]="eligible_population"
+total_population=svyby( ~one, by = ~ i_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+age_eligible_population=svyby( ~one, by = ~ i_stat, design =k, FUN=svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
 count=svyby( ~ss_count, by = ~ i_stat, design =  k, 	FUN = svytotal)
 value=svyby( ~ss_val, by = ~ i_stat, design =  k, 	FUN = svytotal)
 colnames(count)[colnames(count)=="se"]="se_count"
 colnames(value)[colnames(value)=="se"]="se_value"
 immigrant	=	merge(count, value, by='i_stat')
-immigrant	=	merge(immigrant, eligible_population, by='i_stat')
-immigrant	=	merge(immigrant, adult_population, by='i_stat')
-
+immigrant	=	merge(immigrant, age_eligible_population, by='i_stat')
+immigrant	=	merge(immigrant, total_population, by='i_stat')
 immigrant$i_stat=ifelse(immigrant$i_stat == 1,"Immigrant",ifelse(immigrant$i_stat == 2, "Non-immigrant", "error"))
 colnames(immigrant)[colnames(immigrant)=="i_stat"]="group"
 immigrant$calc_type=2
 #Citizenship or Immigrant
-adult_population=svyby( ~one, by = ~ i_cit_stat, design =adults, FUN=svytotal)
-colnames(adult_population)[colnames(adult_population)=="se"]="se_adult_population"
-colnames(adult_population)[colnames(adult_population)=="one"]="adult_population"
-eligible_population=svyby( ~one, by = ~ i_cit_stat, design =k, FUN=svytotal)
+total_population=svyby( ~one, by = ~ i_cit_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+age_eligible_population=svyby( ~one, by = ~ i_cit_stat, design =k, FUN=svytotal)
 count=svyby( ~ss_count, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
 value=svyby( ~ss_val, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
-colnames(eligible_population)[colnames(eligible_population)=="se"]="se_eligible_population"
-colnames(eligible_population)[colnames(eligible_population)=="one"]="eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
 colnames(count)[colnames(count)=="se"]="se_count"
 colnames(value)[colnames(value)=="se"]="se_value"
 nativity	=	merge(count, value, by='i_cit_stat')
-nativity	=	merge(nativity, eligible_population, by='i_cit_stat')
-nativity	=	merge(nativity, adult_population, by='i_cit_stat')
+nativity	=	merge(nativity, age_eligible_population, by='i_cit_stat')
+nativity	=	merge(nativity, total_population, by='i_cit_stat')
 nativity$i_cit_stat=ifelse(nativity$i_cit_stat==1,"Natives", ifelse(nativity$i_cit_stat==2, "Naturalized", "Noncitizens"))
 colnames(nativity)[colnames(nativity)=="i_cit_stat"]="group"
 nativity$calc_type=3
-
 # Merge and calculate
 program_name	=	rbind(generation, nativity, immigrant)
 program_name <- within(program_name, per_beneficiary <- ss_val/ss_count)
-program_name <- within(program_name, per_eligible_population <- ss_val/eligible_population)
-program_name <- within(program_name, per_entire_population <- ss_val/adult_population)
-program_name$se_count=NA
-program_name$se_value=NA
-program_name$se_eligible_population=NA
-program_name$se_adult_population=NA
+program_name <- within(program_name, per_age_eligible_population <- ss_val/age_eligible_population)
+program_name <- within(program_name, per_total_population <- ss_val/total_population)
+program_name$se_count=NULL
+program_name$se_value=NULL
+program_name$se_age_eligible_population=NULL
+program_name$se_total_population=NULL
+colnames(program_name)[colnames(program_name)=="ss_val"]="program_value"
+colnames(program_name)[colnames(program_name)=="ss_count"]="program_count"
 return(program_name)}
-Social_Security=(SS(elderly))
-Social_Security_Pov200=(SS(pov200_e))
+A_Social_Security=(SS(elderly))
+A_Social_Security$program_name=('Social Security')
+A_Social_Security$poverty_200=('no')
+P200_A_Social_Security=(SS(pov200_e))
+P200_A_Social_Security$program_name=('Social Security')
+P200_A_Social_Security$poverty_200=('yes')
 
 
+#### Public Assistance Welfare Function  ####
+CashWelfare=function(x){	k=(x) 
+#Generations
+total_population=svyby( ~one, by = ~ i_gen_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+age_eligible_population=svyby( ~one, by = ~ i_gen_stat, design =k, FUN=svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+count=svyby( ~pub_help, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~paw_val, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+generation	=	merge(count, value, by='i_gen_stat')
+generation	=	merge(generation, age_eligible_population, by='i_gen_stat')
+generation	=	merge(generation, total_population, by='i_gen_stat')
+generation$i_gen_stat=ifelse(generation$i_gen_stat==1,"Gen_1",ifelse(generation$i_gen_stat==2,"Gen_2",ifelse(generation$i_gen_stat==3,"Gen_3+", "error")))
+colnames(generation)[colnames(generation)=="i_gen_stat"]="group"
+generation$calc_type=1
+#Immigrant
+total_population=svyby( ~one, by = ~ i_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+age_eligible_population=svyby( ~one, by = ~ i_stat, design =k, FUN=svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+count=svyby( ~pub_help, by = ~ i_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~paw_val, by = ~ i_stat, design =  k, 	FUN = svytotal)
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+immigrant	=	merge(count, value, by='i_stat')
+immigrant	=	merge(immigrant, age_eligible_population, by='i_stat')
+immigrant	=	merge(immigrant, total_population, by='i_stat')
+immigrant$i_stat=ifelse(immigrant$i_stat == 1,"Immigrant",ifelse(immigrant$i_stat == 2, "Non-immigrant", "error"))
+colnames(immigrant)[colnames(immigrant)=="i_stat"]="group"
+immigrant$calc_type=2
+#Citizenship or Immigrant
+total_population=svyby( ~one, by = ~ i_cit_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+age_eligible_population=svyby( ~one, by = ~ i_cit_stat, design =k, FUN=svytotal)
+count=svyby( ~pub_help, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~paw_val, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+nativity	=	merge(count, value, by='i_cit_stat')
+nativity	=	merge(nativity, age_eligible_population, by='i_cit_stat')
+nativity	=	merge(nativity, total_population, by='i_cit_stat')
+nativity$i_cit_stat=ifelse(nativity$i_cit_stat==1,"Natives", ifelse(nativity$i_cit_stat==2, "Naturalized", "Noncitizens"))
+colnames(nativity)[colnames(nativity)=="i_cit_stat"]="group"
+nativity$calc_type=3
+# Merge and calculate
+program_name	=	rbind(generation, nativity, immigrant)
+program_name <- within(program_name, per_beneficiary <- paw_val/pub_help)
+program_name <- within(program_name, per_age_eligible_population <- paw_val/age_eligible_population)
+program_name <- within(program_name, per_total_population <- paw_val/total_population)
+program_name$se_count=NULL
+program_name$se_value=NULL
+program_name$se_age_eligible_population=NULL
+program_name$se_total_population=NULL
+colnames(program_name)[colnames(program_name)=="paw_val"]="program_value"
+colnames(program_name)[colnames(program_name)=="pub_help"]="program_count"
+return(program_name)}
+CashWelfare_A=(CashWelfare(adults))
+CashWelfare_A$program_name=('Cash Welfare')
+CashWelfare_A$poverty_200=('no')
+P200_CashWelfare_A=(CashWelfare(pov200_a))
+P200_CashWelfare_A$program_name=('Cash Welfare')
+P200_CashWelfare_A$poverty_200=('yes')
+
+
+#### Supplemental Security Income Function ####
+SSI=function(x){	k=(x) 
+#Generations
+total_population=svyby( ~one, by = ~ i_gen_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+age_eligible_population=svyby( ~one, by = ~ i_gen_stat, design =k, FUN=svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+count=svyby( ~ssi_count, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ssi_val, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+generation	=	merge(count, value, by='i_gen_stat')
+generation	=	merge(generation, age_eligible_population, by='i_gen_stat')
+generation	=	merge(generation, total_population, by='i_gen_stat')
+generation$i_gen_stat=ifelse(generation$i_gen_stat==1,"Gen_1",ifelse(generation$i_gen_stat==2,"Gen_2",ifelse(generation$i_gen_stat==3,"Gen_3+", "error")))
+colnames(generation)[colnames(generation)=="i_gen_stat"]="group"
+generation$calc_type=1
+#Immigrant
+total_population=svyby( ~one, by = ~ i_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+age_eligible_population=svyby( ~one, by = ~ i_stat, design =k, FUN=svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+count=svyby( ~ssi_count, by = ~ i_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ssi_val, by = ~ i_stat, design =  k, 	FUN = svytotal)
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+immigrant	=	merge(count, value, by='i_stat')
+immigrant	=	merge(immigrant, age_eligible_population, by='i_stat')
+immigrant	=	merge(immigrant, total_population, by='i_stat')
+immigrant$i_stat=ifelse(immigrant$i_stat == 1,"Immigrant",ifelse(immigrant$i_stat == 2, "Non-immigrant", "error"))
+colnames(immigrant)[colnames(immigrant)=="i_stat"]="group"
+immigrant$calc_type=2
+#Citizenship or Immigrant
+total_population=svyby( ~one, by = ~ i_cit_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+age_eligible_population=svyby( ~one, by = ~ i_cit_stat, design =k, FUN=svytotal)
+count=svyby( ~ssi_count, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ssi_val, by = ~ i_cit_stat, design =  k, 	FUN = svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+nativity	=	merge(count, value, by='i_cit_stat')
+nativity	=	merge(nativity, age_eligible_population, by='i_cit_stat')
+nativity	=	merge(nativity, total_population, by='i_cit_stat')
+nativity$i_cit_stat=ifelse(nativity$i_cit_stat==1,"Natives", ifelse(nativity$i_cit_stat==2, "Naturalized", "Noncitizens"))
+colnames(nativity)[colnames(nativity)=="i_cit_stat"]="group"
+nativity$calc_type=3
+# Merge and calculate
+program_name	=	rbind(generation, nativity, immigrant)
+program_name <- within(program_name, per_beneficiary <- ssi_val/ssi_count)
+program_name <- within(program_name, per_age_eligible_population <- ssi_val/age_eligible_population)
+program_name <- within(program_name, per_total_population <- ssi_val/total_population)
+program_name$se_count=NULL
+program_name$se_value=NULL
+program_name$se_age_eligible_population=NULL
+program_name$se_total_population=NULL
+colnames(program_name)[colnames(program_name)=="ssi_val"]="program_value"
+colnames(program_name)[colnames(program_name)=="ssi_count"]="program_count"
+return(program_name)}
+SSI_A=(SSI(adults))
+SSI_A$program_name=('SSI')
+SSI_A$poverty_200=('no')
+P200_SSI_A=(SSI(pov200_a))
+P200_SSI_A$program_name=('SSI')
+P200_SSI_A$poverty_200=('yes')
+
+SSI=function(x){	k=(x) 
+total_population=svyby( ~one, by = ~ i_gen_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+age_eligible_population=svyby( ~one, by = ~ i_gen_stat, design =k, FUN=svytotal)
+count=svyby( ~ssi_count, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ssi_val, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+nativity	=	merge(count, value, by='i_gen_stat')
+nativity	=	merge(nativity, age_eligible_population, by='i_gen_stat')
+nativity	=	merge(nativity, total_population, by='i_gen_stat')
+nativity$i_gen_stat=ifelse(nativity$i_gen_stat==1,"Natives", ifelse(nativity$i_gen_stat==2, "Naturalized", "Noncitizens"))
+colnames(nativity)[colnames(nativity)=="i_gen_stat"]="group"
+nativity$calc_type=4
+# Old
+total_population=svyby( ~one, by = ~ i_gen_stat, design =z, FUN=svytotal)
+colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
+colnames(total_population)[colnames(total_population)=="one"]="total_population"
+age_eligible_population=svyby( ~one, by = ~ i_gen_stat, design =k, FUN=svytotal)
+count=svyby( ~ssi_count, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+value=svyby( ~ssi_val, by = ~ i_gen_stat, design =  k, 	FUN = svytotal)
+colnames(age_eligible_population)[colnames(age_eligible_population)=="se"]="se_age_eligible_population"
+colnames(age_eligible_population)[colnames(age_eligible_population)=="one"]="age_eligible_population"
+colnames(count)[colnames(count)=="se"]="se_count"
+colnames(value)[colnames(value)=="se"]="se_value"
+nativity	=	merge(count, value, by='i_gen_stat')
+nativity	=	merge(nativity, age_eligible_population, by='i_gen_stat')
+nativity	=	merge(nativity, total_population, by='i_gen_stat')
+nativity$i_gen_stat=ifelse(nativity$i_gen_stat==1,"Natives", ifelse(nativity$i_gen_stat==2, "Naturalized", "Noncitizens"))
+colnames(nativity)[colnames(nativity)=="i_gen_stat"]="group"
+nativity$calc_type=4
+# Create 
+program_name	=	rbind(generation, nativity, immigrant)
+program_name <- within(program_name, per_beneficiary <- ssi_val/ssi_count)
+program_name <- within(program_name, per_age_eligible_population <- ssi_val/age_eligible_population)
+program_name <- within(program_name, per_total_population <- ssi_val/total_population)
+program_name$se_count=NULL
+program_name$se_value=NULL
+program_name$se_age_eligible_population=NULL
+program_name$se_total_population=NULL
+colnames(program_name)[colnames(program_name)=="ssi_val"]="program_value"
+colnames(program_name)[colnames(program_name)=="ssi_count"]="program_count"
+return(program_name)}
+SSI_A=(SSI(adults))
+SSI_A$program_name=('SSI')
+SSI_A$poverty_200=('no')
+P200_SSI_A=(SSI(pov200_a))
+P200_SSI_A$program_name=('SSI')
+P200_SSI_A$poverty_200=('yes')
+
+
+
+unique(names(c(P200_SSI_A,SSI_A,P200_CashWelfare_A,CashWelfare_A, A_Social_Security, P200_A_Social_Security)))
+final_dataset=rbind(P200_SSI_A,SSI_A,P200_CashWelfare_A,CashWelfare_A, A_Social_Security, P200_A_Social_Security)
+write.csv(final_dataset, 'final_dataset.csv')
 #### Medicaid/Uninsured  ####
-
 medicaid=function(x){	k=update(x, caid = factor( caid )) 
 svyby( ~caid, by = ~ i_stat, design =  k, 	FUN = svymean)}
 

@@ -111,13 +111,11 @@ kids1 <- update(kids1, ssi_value = hssival/h_numper)
 # hfdval
 
 #### Subsets
-
 kids_good <- subset(kids1, prcitshp != 5 & either_parent_noncitizen == 0)
 anchor_babies <- subset(kids1, prcitshp != 5 & either_parent_noncitizen == 1)
 kids_badhombres <- subset(kids1, prcitshp == 5)
 
 ### Final Calcs
-
 svymean(	~govcare ,	design = kids_good)
 svymean(	~govcare ,	design = anchor_babies)
 svymean(	~govcare ,	design = kids_badhombres)
@@ -147,7 +145,6 @@ svymean(	~welfare ,	design = kids_badhombres)
 svyby( ~ssi_rate, by = ~ i_stat, design =  adults2, FUN = svymean)
 svyby( ~welfare, by = ~ i_stat, design =  adults2, FUN = svymean)
 
-
 svymean(	~ssi_rate ,	design = kids_good)
 svymean(	~ssi_rate ,	design = anchor_babies)
 svymean(	~ssi_rate ,	design = kids_badhombres)
@@ -175,23 +172,6 @@ svymean(	~ssi_value , by = ~ hssi_yn,	design = kids_badhombres2)
 
 
 #####
-
-medicaid_kids <- function(x){	k <- update(x, govcare = factor( govcare )) 
-svymean(	~govcare ,	design = k)}
-
-medicaid_kids(kids_good)
-
-
-svyby( ~caid, by = ~ i_stat, design =  k, 	FUN = svymean)}
-
-
-svymean(
-	~moop ,
-	design = y.female
-)
-
-
-																			
 kids1$uninsure <- 
 	ifelse(kids1$a_age >= 15 & (kids1$hi_yn == 2 | kids1$mcaid == 2 | kids1$caid == 2) | 
 	(kids1$a_age < 15 & kids1$ch_hi == 3) | (kids1$pchip == 2), 1, 
