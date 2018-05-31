@@ -3,7 +3,7 @@ library(survey)				# load survey package (analyzes complex design surveys)
 library(reshape2)
 library(plyr)
 #pop_68 = peinusyr >= 4
-x=readRDS( file.path( path.expand( "~" ),"CPSASEC",paste(2016,"cps asec.rds") ) )
+x=readRDS( file.path( path.expand( "~" ),"CPSASEC",paste(2017,"cps asec.rds") ) )
 immigrant_dads<- subset(x, a_sex == 1 & a_age > 18 & prcitshp >= 4 , select = c(h_seq , a_lineno))
 immigrant_moms<- subset(x, a_sex == 2 & a_age > 18 & prcitshp >= 4 , select = c(h_seq , a_lineno))
 noncitizen_dads<- subset(x, a_sex == 1 & a_age > 18 & prcitshp >= 5 , select = c(h_seq , a_lineno))
@@ -53,7 +53,7 @@ rm(kids,immigrant_dads,immigrant_moms,before_nrow,x)
 z=update(z, i_stat =  ifelse(prcitshp >= 4, 1,ifelse(prcitshp >= 1, 2, 0))) # Is Immigrant?
 z=update(z, cit_stat = ifelse(prcitshp <= 4, 0,ifelse(prcitshp == 1, 1, 0))) # Is Citizen?
 z=update(z, i_cit_stat = ifelse(prcitshp <= 3, 1,ifelse(prcitshp == 4, 2,ifelse(prcitshp == 5, 3, 0)))) # Is Immigrant and Citizen?
-z=update(z, i_parent = ifelse( (pefntvty < 100 | pemntvty < 100), 0, 1)) # Parent Immigrant?
+z=update(z, i_parent = ifelse( (pefntvty >= 100 | pemntvty >= 100), 1, 0)) # Parent Immigrant?
 z=update(z, i_gen_stat = ifelse(prcitshp >= 4, 1,ifelse(i_parent== 1, 2,ifelse(i_parent == 0, 3, 0)))) # Generational Stat
 z=update(z, i_parent_f = factor( i_parent )) # Define Factor
 z=update(z, i_stat_f = factor( i_stat )) # Define Factor
@@ -481,6 +481,8 @@ P200_C_CashW$program_name=('TANF')
 P200_C_CashW$poverty_200=('yes')
 
 
+# 2016 
+
 Child_SNAP=function(x){	k=(x) 
 total_population=svyby( ~one, by = ~ i_gen_kids, design =z, FUN=svytotal)
 colnames(total_population)[colnames(total_population)=="se"]="se_total_population"
@@ -523,11 +525,59 @@ unique(names(c(P200_SSI_A,SSI_A,P200_CashWelfare_A,CashWelfare_A, A_Social_Secur
 unique(names(c(P200_SSI_A,SSI_A,P200_CashWelfare_A,CashWelfare_A, A_Social_Security, P200_A_Social_Security)))
 
 
-final_dataset=rbind(P200_SSI_A,SSI_A,P200_CashWelfare_A,CashWelfare_A, A_Social_Security, P200_A_Social_Security, P200_C_SNAP, C_SNAP, SSI_C, P200_SSI_C, A_SNAP, P200_SNAP,
-																				C_CashW, P200_C_CashW)
+final_dataset=rbind(P200_SSI_A,SSI_A,P200_CashWelfare_A,CashWelfare_A, A_Social_Security, P200_A_Social_Security, P200_C_SNAP, C_SNAP, SSI_C, P200_SSI_C, A_SNAP, P200_SNAP,C_CashW, P200_C_CashW)
 
-
+unique(final_dataset$group)
 write.csv(final_dataset, 'final_dataset.csv')
+
+# Graphing
+my_theme <- function(){theme_light() +theme(text = element_text(family = "Open Sans"), legend.text.align = 0,
+		plot.title = element_text(size = 12, color = "gray30"),   # Set up the title style
+		plot.subtitle = element_text(size = 10, color = "black"), # Set up the subtitle style
+		plot.margin = unit(c(.05,.05,.05,.05), "cm"),                 # Add white space at the top and left
+		panel.grid = element_blank(),#panel.border = element_blank(),
+		axis.title = element_blank(),axis.ticks = element_blank(),#axis.text.x = element_blank(),
+		axis.text.y = element_text(size = 9, color = "gray10"))}
+
+fig_df= subset(final_dataset, poverty_200=='no' & (calc_type==1 | calc_type==4))
+colnames(fig_df)
+
+fig2_df=fig_df
+
+fig_df$Generation=ifelse(fig_df$group=='Gen_3+'|fig_df$group=='ChildGen_3+','3+',
+											ifelse(fig_df$group=='Gen_2'|fig_df$group=='ChildGen_2','2',
+											ifelse(fig_df$group=='Gen_1'|fig_df$group=='ChildGen_1','1','0')))
+
+fig2_df$Generation=ifelse(fig2_df$group=='Gen_3+'|fig2_df$group=='ChildGen_3+','3+',
+											ifelse(fig2_df$group=='Gen_2'|fig2_df$group=='ChildGen_2','1-2',
+											ifelse(fig2_df$group=='Gen_1'|fig2_df$group=='ChildGen_1','1-2','0')))
+
+fig1=aggregate(data=fig_df, age_eligible_population ~ Generation+ program_name, FUN = sum)
+fig2=aggregate(data=fig_df,cbind(age_eligible_population, program_value) ~ Generation+program_name,FUN=sum)
+fig2 <- within(fig2, per_total_population<-program_value/age_eligible_population)
+
+alt_fig1=aggregate(data=fig2_df,age_eligible_population~Generation+program_name,FUN=sum)
+alt_fig2=aggregate(data=fig2_df,cbind(age_eligible_population, program_value)~Generation+program_name,FUN=sum)
+alt_fig2<-within(alt_fig2, per_total_population<-program_value/age_eligible_population)
+
+
+library(ggplot2)
+plot1=ggplot(alt_fig2, aes(program_name, per_total_population, fill=Generation)) +my_theme() + geom_bar(aes(fill = Generation), position = "dodge", stat="identity")+ geom_text(aes(label=round(per_total_population,2)),position=position_dodge(width=0.9), vjust=-0.25)
+
+plot2=ggplot(fig2, aes(program_name, per_total_population, fill=Generation)) +my_theme()+geom_bar(aes(fill=Generation), position = "dodge", stat="identity")+ geom_text(aes(label=round(per_total_population,2)),position=position_dodge(width=0.9), vjust=-0.25)
+																																																																										ggsave(filename="Figure.png", plot=plot1)
+ggsave(filename="Figure_Alt.png", plot=plot2)																																																								
+
+figure_2 + geom_bar(aes(fill = gen), position = "dodge", stat="identity")
+
+
+
+
+
+
+
+
+
 #### Medicaid/Uninsured  ####
 medicaid=function(x){	k=update(x, caid = factor( caid )) 
 svyby( ~caid, by = ~ i_stat, design =  k, 	FUN = svymean)}
