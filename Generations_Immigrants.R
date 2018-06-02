@@ -560,6 +560,9 @@ alt_fig1=aggregate(data=fig2_df,age_eligible_population~Generation+program_name,
 alt_fig2=aggregate(data=fig2_df,cbind(age_eligible_population, program_value)~Generation+program_name,FUN=sum)
 alt_fig2<-within(alt_fig2, per_total_population<-program_value/age_eligible_population)
 
+write.csv(alt_fig2, 'alt_fig2_dataset.csv')
+write.csv(fig2, 'fig2_dataset.csv')
+
 
 library(ggplot2)
 plot1=ggplot(alt_fig2, aes(program_name, per_total_population, fill=Generation)) +my_theme() + geom_bar(aes(fill = Generation), position = "dodge", stat="identity")+ geom_text(aes(label=round(per_total_population,2)),position=position_dodge(width=0.9), vjust=-0.25)

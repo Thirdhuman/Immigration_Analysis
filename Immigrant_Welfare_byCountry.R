@@ -7,8 +7,8 @@ codes<-read.csv('/Users/rorr/Desktop/Welfare_Policy/Data/Data_Explorations/Immig
 keeps <- c("Code", "Country")
 codes<- codes[ , keeps, drop = FALSE]
 
-noncitizen_dads<- subset(x, a_sex == 1 & a_age > 18, select = c(h_seq , a_lineno))
-noncitizen_moms<- subset(x, a_sex == 2 & a_age > 18, select = c(h_seq , a_lineno))
+noncitizen_dads<- subset(x, a_sex == 1 & a_age > 18 & prcitshp >= 5 , select = c(h_seq , a_lineno))
+noncitizen_moms<- subset(x, a_sex == 2 & a_age > 18 & prcitshp >= 5 , select = c(h_seq , a_lineno))
 kids<- subset(x, a_age < 19, select = c(h_seq , a_lineno , prcitshp, pelndad, pelnmom))
 
 noncitizen_moms$mom_match <- 1
