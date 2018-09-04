@@ -42,8 +42,7 @@ z <- i_stat == 3
 # children receiving free or reduced price lunches - hflunch
 
 household_public_charge <- function(x){
-	k <- subset(x,  care == 1 | caid == 1 | wicyn == 1 | ssi_yn == 1 | paw_yn == 1 | ed_yn == 1 |
-													 pchip == 1 | ch_mc == 1 | ssikidyn == 1	| 
+	k <- subset(x,  care == 1 | caid == 1 | wicyn == 1 | ssi_yn == 1 | paw_yn == 1 | ed_yn == 1 | pchip == 1 | ch_mc == 1 | ssikidyn == 1	| 
 															hfoodsp == 1 | hpublic == 1 | hflunch == 1 | hengast == 1)
 	svyby( ~one, by = ~ gestfips, design =  k, 	FUN = svytotal)}
 
