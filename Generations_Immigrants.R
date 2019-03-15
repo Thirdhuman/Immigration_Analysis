@@ -62,8 +62,7 @@ z=update(z,i_gen_kids= ifelse(prcitshp!=5&either_parent_immigrant==0,1,ifelse(pr
 z=update(z, i_gen_stat = ifelse(prcitshp >= 4, 1,ifelse(i_parent== 1, 2,ifelse(i_parent == 0, 3, 0)))) # Generational Stat
 
 z=update(z,kid_stat_old= ifelse(prcitshp!=5&either_parent_noncitizen==0,1,
-																																ifelse(prcitshp!=5&either_parent_noncitizen==1,2,
-																																							ifelse(prcitshp==5,3,0))))
+	ifelse(prcitshp!=5&either_parent_noncitizen==1,2,ifelse(prcitshp==5,3,0))))
 
 
 # Uninsured vs. Insured

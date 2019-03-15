@@ -26,16 +26,17 @@ z <- update(z, ssi = ifelse( ssi_yn == 1, 1, ifelse(ssi_yn == 2, 0, 0)))
 z <- update(z, pub_help = ifelse( paw_yn == 1, 1, ifelse(paw_yn == 2, 0, 0)))
 z <- update(z, lunch_stat = ifelse( hflunch == 1, 1, ifelse(hflunch == 2, 0, 0)))
 z <- update(z, avgsnapben = hfdval/h_numper)
+z <- update(z, i_stat3 = i_stat/i2_stat)
 
-svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svytotal)
+svyby( ~one, by = ~ i_stat, design =  z, 	FUN = svytotal)
 
 svyby( ~one, by = ~ prcitshp, design =  z, 	FUN = svyquantile())
 
 svyby( ~ptotval, by = ~ i_stat, design =  adults, FUN = svyquantile,  c( .5), ci=TRUE )
 
 svyby( ~ptotval, by = ~ i_stat, design =  adults, FUN = svymean )
-
-
+z=subset(z, i2_stat > 0)
+svytotal(~i_stat3,design =  z)
 svyquantile( ~ptotval, design =  z, c(.5))
 
 
